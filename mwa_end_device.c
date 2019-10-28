@@ -144,6 +144,7 @@ static instanceId_t   macInstance;
 static uint8_t        interfaceId;
 osaEventId_t          mAppEvent;
 osaTaskId_t           mAppTaskHandler;
+static uint8_t 		  buffer;
 
 #if gNvmTestActive_d
 
@@ -380,7 +381,7 @@ void AppThread(osaTaskParam_t argument)
         pMsgIn = NULL;
 
         /* Dequeue the MLME message */
-        if( ev & gAppEvtMessageFromMLME_c )
+        if(ev & gAppEvtMessageFromMLME_c)
         {
             /* Get the message from MLME */
             pMsgIn = MSG_DeQueue(&mMlmeNwkInputQueue);
@@ -415,54 +416,10 @@ void AppThread(osaTaskParam_t argument)
             Serial_Print(interfaceId, "~~                                        ~~\n\r", gAllowToBlock_d);
         	Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
         	Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
-#if gNvmTestActive_d 
-            if( ev & gAppEvtPressedRestoreNvmBut_c )
-            {
-              NvRestoreDataSet(&mCoordInfo, TRUE);
-              NvRestoreDataSet(&maMyAddress, TRUE);
-              NvRestoreDataSet(&mAddrMode, TRUE);
-            }
-            
-            if ( mCoordInfo.coordAddress && ( mAddrMode != gAddrModeNoAddress_c ) ) 
-            {
-                mlmeMessage_t msg;
-                msg.msgType = gMlmeSetReq_c;
-                msg.msgData.setReq.pibAttribute = gMPibShortAddress_c;
-                msg.msgData.setReq.pibAttributeValue = (uint8_t *)&maMyAddress[0];
-                (void)NWK_MLME_SapHandler( &msg, 0 );
-                msg.msgType = gMlmeSetReq_c;
-                msg.msgData.setReq.pibAttribute = gMPibCoordShortAddress_c;
-                msg.msgData.setReq.pibAttributeValue = (uint64_t *)&mCoordInfo.coordAddress;
-                (void)NWK_MLME_SapHandler( &msg, 0 );
-                msg.msgType = gMlmeSetReq_c;
-                msg.msgData.setReq.pibAttribute = gMPibPanId_c;
-                msg.msgData.setReq.pibAttributeValue = (uint16_t *)&mCoordInfo.coordPanId;
-                (void)NWK_MLME_SapHandler( &msg, 0 );
-                msg.msgType = gMlmeSetReq_c;
-                msg.msgData.setReq.pibAttribute = gMPibLogicalChannel_c;
-                msg.msgData.setReq.pibAttributeValue = (uint8_t *)&mCoordInfo.logicalChannel;
-                (void)NWK_MLME_SapHandler( &msg, 0 );                 
-                Serial_Print(interfaceId, "\n\rPIB elements restored from NVM:\n\r", gAllowToBlock_d); 
-                Serial_Print(interfaceId, "\n\rAddress...........0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.coordAddress, mCoordInfo.coordAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
-                Serial_Print(interfaceId, "\n\rPAN ID............0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.coordPanId, 2, gPrtHexNoFormat_c);
-                Serial_Print(interfaceId, "\n\rLogical Channel...0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.logicalChannel, 1, gPrtHexNoFormat_c);
-                Serial_Print(interfaceId, "\n\r", gAllowToBlock_d); 
-                Serial_Print(interfaceId, "End device address restored from NVM: 0x", gAllowToBlock_d);
-                Serial_PrintHex(interfaceId, maMyAddress, mAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
-                Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
-                /* Startup the timer */
-                TMR_StartLowPowerTimer(mTimer_c, gTmrSingleShotTimer_c ,mPollInterval, AppPollWaitTimeout, NULL );
-                gState = stateListen;
-            }
-            else
-            {
-                Serial_Print(interfaceId, "PIB elements were not restored from NVM!\n\r", gAllowToBlock_d); 
-#endif
-                /* Goto Active Scan state. */
-                gState = stateScanActiveStart;
-#if gNvmTestActive_d 
-            }
-#endif
+
+            /* Goto Active Scan state. */
+            gState = stateScanActiveStart;
+
             OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
             break;
             
@@ -505,17 +462,7 @@ void AppThread(osaTaskParam_t argument)
                         else
                         {
                             Serial_Print(interfaceId, "Scan did not find a suitable coordinator\n\r", gAllowToBlock_d);
-#if gNvmTestActive_d 
-                            if ( mCoordInfo.coordAddress && ( mAddrMode != gAddrModeNoAddress_c ) )
-                            {
-                                FLib_MemSet(&mCoordInfo, 0, sizeof(mCoordInfo));
-                                FLib_MemSet(maMyAddress, 0, 8);
-                                mAddrMode = gAddrModeNoAddress_c;
-                                NvSaveOnIdle(&mCoordInfo, TRUE);
-                                NvSaveOnIdle(&maMyAddress, TRUE);
-                                NvSaveOnIdle(&mAddrMode, TRUE);
-                            }
-#endif
+
                             /* Restart the Active scan */
                             gState = stateScanActiveStart;
                             OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
@@ -552,11 +499,7 @@ void AppThread(osaTaskParam_t argument)
                             Serial_Print(interfaceId, "We were assigned the short address 0x", gAllowToBlock_d);
                             Serial_PrintHex(interfaceId, maMyAddress, mAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
                             Serial_Print(interfaceId, "\n\r\n\rReady to send and receive data over the UART.\n\r\n\r", gAllowToBlock_d);                     
-#if gNvmTestActive_d                             
-                            NvSaveOnIdle(&mCoordInfo, TRUE);
-                            NvSaveOnIdle(&maMyAddress, TRUE);
-                            NvSaveOnIdle(&mAddrMode, TRUE);
-#endif 
+
                             /* Startup the timer */
                             TMR_StartLowPowerTimer(mTimer_c, gTmrSingleShotTimer_c ,mPollInterval, AppPollWaitTimeout, NULL );
                             /* Go to the listen state */
@@ -566,14 +509,7 @@ void AppThread(osaTaskParam_t argument)
                         else 
                         {
                             Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... \n\r\n\r", gAllowToBlock_d);
-#if gNvmTestActive_d 
-                            FLib_MemSet(&mCoordInfo, 0, sizeof(mCoordInfo));
-                            FLib_MemSet(maMyAddress, 0, 8);
-                            mAddrMode = gAddrModeNoAddress_c;
-                            NvSaveOnIdle(&mCoordInfo, TRUE);
-                            NvSaveOnIdle(&maMyAddress, TRUE);
-                            NvSaveOnIdle(&mAddrMode, TRUE);
-#endif
+
                             gState = stateScanActiveStart;
                             OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
                         }
@@ -598,21 +534,6 @@ void AppThread(osaTaskParam_t argument)
                 /* get byte from UART */
                 App_TransmitUartData();
             }
-#if gNvmTestActive_d  
-            if (timeoutCounter >= mDefaultValueOfTimeoutError_c)
-            {
-                  Serial_Print(interfaceId, "\n\rTimeout - No data received.\n\r\n\r", gAllowToBlock_d);
-                  FLib_MemSet(&mCoordInfo, 0, sizeof(mCoordInfo));
-                  FLib_MemSet(maMyAddress, 0, 8);
-                  mAddrMode = gAddrModeNoAddress_c;
-                  NvSaveOnIdle(&mCoordInfo, TRUE);
-                  NvSaveOnIdle(&maMyAddress, TRUE);
-                  NvSaveOnIdle(&mAddrMode, TRUE);
-                  timeoutCounter = 0;
-                  OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
-                  gState = stateInit;
-            }
-#endif
             break;
         }
 
@@ -1089,7 +1010,13 @@ static void App_TransmitUartData(void)
         mpPacket->msgType = gMcpsDataReq_c;
         mpPacket->msgData.dataReq.pMsdu = (uint8_t*)(&mpPacket->msgData.dataReq.pMsdu) + 
                                           sizeof(mpPacket->msgData.dataReq.pMsdu);
+
+        /**/
         Serial_Read(interfaceId, mpPacket->msgData.dataReq.pMsdu, count, &count);
+		/**/
+
+        FLib_MemCpy(&mpPacket->msgData.dataReq.dstAddr, &mCoordInfo.coordAddress, 8);
+
         /* Create the header using coordinator information gained during 
         the scan procedure. Also use the short address we were assigned
         by the coordinator during association. */
@@ -1207,6 +1134,11 @@ static void App_HandleKeys
         }
     }
 #endif
+}
+
+static void App_Transmit_Buffer(void)
+{
+
 }
 
 /******************************************************************************

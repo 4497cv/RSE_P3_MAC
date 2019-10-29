@@ -160,7 +160,7 @@ static uint8_t        g_buffer[mDefaultBufferSize];
 static uint16_t timeoutCounter = 0;
 
 /*
- * Datasets used by the NVM test application 
+ * Datasets used by the NVM test application
  */
 
 /* This data set contains application variables to be preserved across resets */
@@ -433,14 +433,10 @@ void AppThread(osaTaskParam_t argument)
 				Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
 				Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
 
+				TMR_StartIntervalTimer(myTimerID, 3000, myTaskTimerCallback, NULL);
+
 				/* switch to active scan state. */
 				gState = stateScanActiveStart;
-
-				TMR_StartIntervalTimer(myTimerID,
-											3000,
-							 myTaskTimerCallback,
-											NULL
-									   );
 
 				OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
 			break;
@@ -476,7 +472,7 @@ void AppThread(osaTaskParam_t argument)
 								Serial_Print(interfaceId, "\n\rLogical Channel...0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.logicalChannel, 1, gPrtHexNoFormat_c);
 								Serial_Print(interfaceId, "\n\rBeacon Spec.......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.superframeSpec, 2, gPrtHexNoFormat_c);
 								Serial_Print(interfaceId, "\n\rLink Quality......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.linkQuality, 1, gPrtHexNoFormat_c);
-								Serial_Print(interfaceId, "\n\r~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
 								Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
 
 								/* switch to association state */
@@ -485,7 +481,7 @@ void AppThread(osaTaskParam_t argument)
 							}
 							else
 							{
-								Serial_Print(interfaceId, "\n\rScan did not find a suitable coordinator!\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "Scan did not find a suitable coordinator\n\r", gAllowToBlock_d);
 
 								/* reload active scan state*/
 								gState = stateScanActiveStart;
@@ -497,8 +493,7 @@ void AppThread(osaTaskParam_t argument)
 			break;
 			case stateAssociate:
 				/* Associate to the PAN coordinator */
-				Serial_Print(interfaceId, "\n\rAssociating to PAN coordinator on channel 0x", gAllowToBlock_d);
-				Serial_Print(interfaceId, "\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "Associating to PAN coordinator on channel 0x", gAllowToBlock_d);
 				Serial_PrintHex(interfaceId, &(mCoordInfo.logicalChannel), 1, gPrtHexNewLine_c);
 
 				rc = App_SendAssociateRequest();
@@ -518,9 +513,8 @@ void AppThread(osaTaskParam_t argument)
 							rc = App_HandleAssociateConfirm(pMsgIn);
 							if (rc == errorNoError)
 							{
-								Serial_Print(interfaceId, "\n\rSuccessfully associated with the coordinator.\n\r", gAllowToBlock_d);
-								Serial_Print(interfaceId, "\n\rWe were assigned the short address 0x", gAllowToBlock_d);
-								Serial_Print(interfaceId, "\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "Successfully associated with the coordinator.\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "We were assigned the short address 0x", gAllowToBlock_d);
 								Serial_PrintHex(interfaceId, maMyAddress, mAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
 								Serial_Print(interfaceId, "\n\r\n\rReady to send and receive data over the UART.\n\r\n\r", gAllowToBlock_d);
 
@@ -532,7 +526,7 @@ void AppThread(osaTaskParam_t argument)
 							}
 							else
 							{
-								Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... :(\n\r\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... \n\r\n\r", gAllowToBlock_d);
 
 								gState = stateScanActiveStart;
 								OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
@@ -566,16 +560,16 @@ void AppThread(osaTaskParam_t argument)
 
 					switch(g_counter)
 					{
-						case 0:
+						case 1:
 							Led1On(); /* light red */
 						break;
-						case 1:
+						case 2:
 							Led2On(); /* red */
 						break;
-						case 2:
+						case 3:
 							Led3On(); /* green*/
 						break;
-						case 3:
+						case 4:
 							Led4On(); /* blue */
 						break;
 						default:
@@ -925,7 +919,7 @@ static uint8_t App_HandleMlmeInput(nwkMessage_t *pMsg)
          allow a new poll request. Otherwise, we wait for the data
          indication before allowing the next poll request. */
       mWaitPollConfirm = FALSE;
-#if gNvmTestActive_d      
+#if gNvmTestActive_d
       if(pMsg->msgData.pollCnf.status == gNoAck_c)
       {
           timeoutCounter++;
@@ -1278,9 +1272,9 @@ resultType_t MCPS_NWK_SapHandler (mcpsToNwkMessage_t* pMsg, instanceId_t instanc
 
 static void myTaskTimerCallback(void*param)
 {
-	if(g_counter > 2)
+	if(g_counter > 3)
 	{
-		g_counter = 0;
+		g_counter = 1;
 	}
 	else
 	{
@@ -1305,5 +1299,5 @@ static void Buffer_Init()
 	g_buffer[8] = ':';
 	g_buffer[9] = ' ';
 	g_buffer[11] = 0x0A; /* line feed */
-	g_buffer[12] = 0x0D; /* carriage return */
+	g_buffer[12] = 0x0D; /* return carriage */
 }

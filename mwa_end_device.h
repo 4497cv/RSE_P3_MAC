@@ -23,24 +23,39 @@
 #include "task.h"
 #include  "stdio.h"
 
+/* Fwk */
+#include "LED.h"
+#include "Keyboard.h"
+#include "SecLib.h"
+#include "SerialManager.h"
+#include "RNG_Interface.h"
+#include "Panic.h"
+#include "MemManager.h"
+#include "TimersManager.h"
+#include "FunctionLib.h"
+
+/* 802.15.4 */
+#include "PhyInterface.h"
+#include "MacInterface.h"
+
+/* KSDK */
+#include "board.h"
+#include "fsl_os_abstraction.h"
+
+
 /************************************************************************************
 *************************************************************************************
 * Public macros
 *************************************************************************************
 ************************************************************************************/
-
+#define mDefaultValueOfChannel_c   (0x00008000) /* channel 15 */
 #define mMacExtendedAddress_c      (0xFFFFFFFFFFFFFFFF)
 
-#ifndef gNvmTestActive_d
-#define gNvmTestActive_d           (0)
-#endif
+#define mDefaultBufferSize 		   13
 
-#ifndef mEnterLowPowerWhenIdle_c
-#define mEnterLowPowerWhenIdle_c (0)
-#endif
-
-#define mDefaultBufferSize 13
-#define mDefaultValueOfChannel_c (0x00008000) /* channel 15 */
+#define mMaxKeysToReceive_c        32
+#define mAppStackSize_c            700
+#define mAppTaskPrio_c             4
 
 /* Maximum number of outstanding packets */
 #define mDefaultValueOfMaxPendingDataPackets_c 2

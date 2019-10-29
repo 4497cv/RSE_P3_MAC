@@ -44,6 +44,7 @@
 #include "board.h"
 #include "fsl_os_abstraction.h"
 
+#include  "BufferCounter.h"
 /************************************************************************************
 *************************************************************************************
 * Private macros
@@ -144,7 +145,7 @@ static instanceId_t   macInstance;
 static uint8_t        interfaceId;
 osaEventId_t          mAppEvent;
 osaTaskId_t           mAppTaskHandler;
-static uint8_t 		  buffer;
+static uint8_t 		  g_buffer[BufferSize]; /* buffer for counter transmission */
 
 #if gNvmTestActive_d
 
@@ -207,6 +208,8 @@ void main_task(uint32_t param)
         Phy_Init();
         RNG_Init(); /* RNG must be initialized after the PHY is Initialized */
         MAC_Init();
+        buffer_init(g_buffer);
+
 #if mEnterLowPowerWhenIdle_c
         PWR_Init();
         PWR_DisallowDeviceToSleep();
@@ -974,7 +977,7 @@ static uint8_t App_WaitMsg(nwkMessage_t *pMsg, uint8_t msgType)
 * Data Request message. The message is sent to the MCPS service access point
 * in the MAC.
 ******************************************************************************/
-static void App_TransmitUartData(void)
+static void App_Transmit(void)
 {   
     uint16_t count;
     
@@ -1134,11 +1137,6 @@ static void App_HandleKeys
         }
     }
 #endif
-}
-
-static void App_Transmit_Buffer(void)
-{
-
 }
 
 /******************************************************************************

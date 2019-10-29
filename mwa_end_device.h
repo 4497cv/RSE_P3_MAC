@@ -44,6 +44,8 @@
 /* Maximum number of outstanding packets */
 #define mDefaultValueOfMaxPendingDataPackets_c 2
 
+#define mDefaultBufferSize 12
+
 /* The slow polling interval is used if the coordinator
    had no data last time we polled. */
 #define mDefaultValueOfPollIntervalSlow_c 820 /* ~(0.001*mDefaultValueOfPollIntervalSlow_c) secs */

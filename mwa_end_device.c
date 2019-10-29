@@ -84,6 +84,8 @@ static void    App_HandleMcpsInput(mcpsToNwkMessage_t *pMsgIn);
 static void    App_TransmitUartData(void);
 static void    AppPollWaitTimeout(void *);
 static void    App_HandleKeys( key_event_t events );
+static void App_Transmit_Buffer(void);
+static void myTaskTimerCallback(void*param);
 
 void App_init( void );
 void AppThread (osaTaskParam_t argument);
@@ -145,6 +147,16 @@ static instanceId_t   macInstance;
 static uint8_t        interfaceId;
 osaEventId_t          mAppEvent;
 osaTaskId_t           mAppTaskHandler;
+
+static uint8_t        g_counter;
+static osaEventId_t   mMyEvents;
+
+/* global variable to store timer ID */
+static tmrTimerID_t myTimerID = gTmrInvalidTimerID_c;
+
+/* local variable to store the current state of the leds */
+static uint8_t ledsState = 0;
+
 static uint8_t 		  g_buffer[BufferSize]; /* buffer for counter transmission */
 
 #if gNvmTestActive_d
@@ -209,6 +221,16 @@ void main_task(uint32_t param)
         RNG_Init(); /* RNG must be initialized after the PHY is Initialized */
         MAC_Init();
         buffer_init(g_buffer);
+
+        myTimerID = TMR_AllocateTimer();
+
+		TMR_StartIntervalTimer(myTimerID,
+									3000,
+					 myTaskTimerCallback,
+									NULL
+							   );
+
+		g_counter = 0;
 
 #if mEnterLowPowerWhenIdle_c
         PWR_Init();
@@ -376,7 +398,7 @@ void AppThread(osaTaskParam_t argument)
     {
         OSA_EventWait(mAppEvent, osaEventFlagsAll_c, FALSE, osaWaitForever_c, &ev);
 
-        if( !gUseRtos_c && !ev)
+        if(!gUseRtos_c && !ev)
         {
             break;
         }
@@ -406,138 +428,167 @@ void AppThread(osaTaskParam_t argument)
         /* The application state machine */
         switch(gState)
         {
-        case stateInit:
-            /* Print a welcome message to the UART */
-        	Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
-        	Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
-        	Serial_Print(interfaceId, "~~                                        ~~\n\r", gAllowToBlock_d);
-            Serial_Print(interfaceId, "~~ End Device application: Third Practice ~~\n\r", gAllowToBlock_d);
-            Serial_Print(interfaceId, "~~                   by                   ~~\n\r", gAllowToBlock_d);
-            Serial_Print(interfaceId, "~~        César Villarreal @4497cv        ~~\n\r", gAllowToBlock_d);
-            Serial_Print(interfaceId, "~~        Tsipini Franco   @t51p          ~~\n\r", gAllowToBlock_d);
-            Serial_Print(interfaceId, "~~        Moíses López     @DES7RIKER     ~~\n\r", gAllowToBlock_d);
-            Serial_Print(interfaceId, "~~                                        ~~\n\r", gAllowToBlock_d);
-        	Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
-        	Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
+			case stateInit:
+				/* Print a welcome message to the UART */
+				Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~                                        ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~           Non-Beacon  (End-Device)     ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~              Third Practice            ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~                   by                   ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~        César Villarreal @4497cv        ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~        Tsipini Franco   @t51p          ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~        Moíses López     @DES7RIKER     ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~                                        ~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
+				Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
 
-            /* Goto Active Scan state. */
-            gState = stateScanActiveStart;
+				/* switch to active scan state. */
+				gState = stateScanActiveStart;
 
-            OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
-            break;
-            
-        case stateScanActiveStart:
-            /* Start the Active scan, and goto wait for confirm state. */
-            Serial_Print(interfaceId, "\n\rStart scanning for a PAN coordinator\n\r", gAllowToBlock_d);
-            
-            rc = App_StartScan(gScanModeActive_c);
-            if(rc == errorNoError)
-            {
-                gState = stateScanActiveWaitConfirm;
-            }
-            break;
-            
-        case stateScanActiveWaitConfirm:
-            /* Stay in this state until the Scan confirm message
-            arrives, and then goto the associate state. */
-            if (ev & gAppEvtMessageFromMLME_c)
-            {
-                if (pMsgIn)
-                {                     
-                    rc = App_WaitMsg(pMsgIn, gMlmeScanCnf_c);
-                    if(rc == errorNoError)
-                    {
-                        rc = App_HandleScanActiveConfirm(pMsgIn);
-                        if(rc == errorNoError)
-                        {
-                            Serial_Print(interfaceId, "Found a coordinator with the following properties:\n\r", gAllowToBlock_d);
-                            Serial_Print(interfaceId, "----------------------------------------------------", gAllowToBlock_d);
-                            Serial_Print(interfaceId, "\n\rAddress...........0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.coordAddress, mCoordInfo.coordAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
-                            Serial_Print(interfaceId, "\n\rPAN ID............0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.coordPanId, 2, gPrtHexNoFormat_c);
-                            Serial_Print(interfaceId, "\n\rLogical Channel...0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.logicalChannel, 1, gPrtHexNoFormat_c);
-                            Serial_Print(interfaceId, "\n\rBeacon Spec.......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.superframeSpec, 2, gPrtHexNoFormat_c);
-                            Serial_Print(interfaceId, "\n\rLink Quality......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.linkQuality, 1, gPrtHexNoFormat_c);
-                            Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);                         
-                            
-                            gState = stateAssociate;
-                            OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
-                        }
-                        else
-                        {
-                            Serial_Print(interfaceId, "Scan did not find a suitable coordinator\n\r", gAllowToBlock_d);
+				OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
+			break;
+			case stateScanActiveStart:
+				/* Start the Active scan, and goto wait for confirm state. */
+				Serial_Print(interfaceId, "\n\rStart scanning for a PAN coordinator\n\r", gAllowToBlock_d);
 
-                            /* Restart the Active scan */
-                            gState = stateScanActiveStart;
-                            OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
-                        }
-                    }
-                }
-            }
-            break;
-            
-        case stateAssociate:
-            /* Associate to the PAN coordinator */
-            Serial_Print(interfaceId, "Associating to PAN coordinator on channel 0x", gAllowToBlock_d);
-            Serial_PrintHex(interfaceId, &(mCoordInfo.logicalChannel), 1, gPrtHexNewLine_c);
-            
-            rc = App_SendAssociateRequest();
-            if(rc == errorNoError)
-                gState = stateAssociateWaitConfirm;
-            break; 
-            
-        case stateAssociateWaitConfirm:
-            /* Stay in this state until the Associate confirm message
-            arrives, and then goto the Listen state. */
-            if (ev & gAppEvtMessageFromMLME_c)
-            {
-                if (pMsgIn)
-                {   
-                    rc = App_WaitMsg(pMsgIn, gMlmeAssociateCnf_c);
-                    if(rc == errorNoError)
-                    {          
-                        rc = App_HandleAssociateConfirm(pMsgIn);
-                        if (rc == errorNoError)
-                        { 
-                            Serial_Print(interfaceId, "Successfully associated with the coordinator.\n\r", gAllowToBlock_d);
-                            Serial_Print(interfaceId, "We were assigned the short address 0x", gAllowToBlock_d);
-                            Serial_PrintHex(interfaceId, maMyAddress, mAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
-                            Serial_Print(interfaceId, "\n\r\n\rReady to send and receive data over the UART.\n\r\n\r", gAllowToBlock_d);                     
+				rc = App_StartScan(gScanModeActive_c);
+				if(rc == errorNoError)
+				{
+					/* switch to confirm state. */
+					gState = stateScanActiveWaitConfirm;
+				}
+			break;
+			case stateScanActiveWaitConfirm:
+				/* Stay in this state until the Scan confirm message
+				arrives, and then goto the associate state. */
+				if (ev & gAppEvtMessageFromMLME_c)
+				{
+					if (pMsgIn)
+					{
+						rc = App_WaitMsg(pMsgIn, gMlmeScanCnf_c);
+						if(rc == errorNoError)
+						{
+							rc = App_HandleScanActiveConfirm(pMsgIn);
+							if(rc == errorNoError)
+							{
+								Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "Found a coordinator with the following properties:\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "----------------------------------------------------", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\rAddress...........0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.coordAddress, mCoordInfo.coordAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
+								Serial_Print(interfaceId, "\n\rPAN ID............0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.coordPanId, 2, gPrtHexNoFormat_c);
+								Serial_Print(interfaceId, "\n\rLogical Channel...0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.logicalChannel, 1, gPrtHexNoFormat_c);
+								Serial_Print(interfaceId, "\n\rBeacon Spec.......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.superframeSpec, 2, gPrtHexNoFormat_c);
+								Serial_Print(interfaceId, "\n\rLink Quality......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.linkQuality, 1, gPrtHexNoFormat_c);
+								Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
 
-                            /* Startup the timer */
-                            TMR_StartLowPowerTimer(mTimer_c, gTmrSingleShotTimer_c ,mPollInterval, AppPollWaitTimeout, NULL );
-                            /* Go to the listen state */
-                            gState = stateListen;
-                            OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c); 
-                        }        
-                        else 
-                        {
-                            Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... \n\r\n\r", gAllowToBlock_d);
+								/* switch to association state */
+								gState = stateAssociate;
+								OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
+							}
+							else
+							{
+								Serial_Print(interfaceId, "Scan did not find a suitable coordinator\n\r", gAllowToBlock_d);
 
-                            gState = stateScanActiveStart;
-                            OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
-                        }
-                    }
-                }
-            }
-            break; 
+								/* reload active scan state*/
+								gState = stateScanActiveStart;
+								OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
+							}
+						}
+					}
+				}
+			break;
+			case stateAssociate:
+				/* Associate to the PAN coordinator */
+				Serial_Print(interfaceId, "Associating to PAN coordinator on channel 0x", gAllowToBlock_d);
+				Serial_PrintHex(interfaceId, &(mCoordInfo.logicalChannel), 1, gPrtHexNewLine_c);
 
-        case stateListen:
-            /* Transmit to coordinator data received from UART. */
-            if (ev & gAppEvtMessageFromMLME_c)
-            {  
-                if (pMsgIn)
-                {  
-                    /* Process it */
-                    rc = App_HandleMlmeInput(pMsgIn);
-                }
-            } 
+				rc = App_SendAssociateRequest();
+				if(rc == errorNoError)
+					gState = stateAssociateWaitConfirm;
+			break;
+			case stateAssociateWaitConfirm:
+				/* Stay in this state until the Associate confirm message
+				arrives, and then goto the Listen state. */
+				if (ev & gAppEvtMessageFromMLME_c)
+				{
+					if (pMsgIn)
+					{
+						rc = App_WaitMsg(pMsgIn, gMlmeAssociateCnf_c);
+						if(rc == errorNoError)
+						{
+							rc = App_HandleAssociateConfirm(pMsgIn);
+							if (rc == errorNoError)
+							{
+								Serial_Print(interfaceId, "Successfully associated with the coordinator.\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "We were assigned the short address 0x", gAllowToBlock_d);
+								Serial_PrintHex(interfaceId, maMyAddress, mAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
+								Serial_Print(interfaceId, "\n\r\n\rReady to send and receive data over the UART.\n\r\n\r", gAllowToBlock_d);
 
-            if (ev & gAppEvtRxFromUart_c)
-            {      
-                /* get byte from UART */
-                App_TransmitUartData();
-            }
-            break;
+								/* Startup the timer */
+								TMR_StartLowPowerTimer(mTimer_c, gTmrSingleShotTimer_c ,mPollInterval, AppPollWaitTimeout, NULL );
+								/* Go to the listen state */
+								gState = stateListen;
+								OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
+							}
+							else
+							{
+								Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... \n\r\n\r", gAllowToBlock_d);
+
+								gState = stateScanActiveStart;
+								OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
+							}
+						}
+					}
+				}
+			break;
+			case stateListen:
+				/* Transmit to coordinator data received from UART. */
+				if (ev & gAppEvtMessageFromMLME_c)
+				{
+					if (pMsgIn)
+					{
+						/* Process it */
+						rc = App_HandleMlmeInput(pMsgIn);
+					}
+				}
+
+				if (ev & gAppEvtRx_c)
+				{
+					/* get byte from UART */
+					App_TransmitUartData();
+				}
+
+				if (ev & gAppEvTimer)
+				{
+					//***TODO:App_Transmit_Buffer();
+
+					TurnOffLeds();
+
+					switch(g_counter)
+					{
+						case 1:
+							Led1On();
+						break;
+						case 2:
+							Led2On();
+						break;
+						case 3:
+							Led3On();
+						break;
+						case 4:
+							Led4On();
+						break;
+						default:
+						break;
+					}
+				}
+
+				/***/
+			break;
+			default:
+			break;
         }
 
         if (pMsgIn)
@@ -592,13 +643,13 @@ static void UartRxCallBack(void *pData)
     uint8_t pressedKey;
     uint16_t count;
     
-    if( stateListen == gState )
+    if(stateListen == gState)
     {
-        OSA_EventSet(mAppEvent, gAppEvtRxFromUart_c);
+        OSA_EventSet(mAppEvent, gAppEvtRx_c);
         return;
     }
     
-    if( gState == stateInit )
+    if(gState == stateInit)
     {
         LED_StopFlashingAllLeds();
         OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
@@ -711,8 +762,8 @@ static uint8_t App_HandleScanActiveConfirm(nwkMessage_t *pMsg)
 
         /* Only attempt to associate if the coordinator
            accepts associations and is non-beacon. */
-        if( ( pPanDesc->superframeSpec.associationPermit ) && 
-            ( pPanDesc->superframeSpec.beaconOrder == 0x0F) )
+        if((pPanDesc->superframeSpec.associationPermit ) && 
+           (pPanDesc->superframeSpec.beaconOrder == 0x0F))
         {        
           
           /* Find the nearest coordinator using the link quality measure. */
@@ -761,6 +812,7 @@ static uint8_t App_SendAssociateRequest(void)
   
   /* Allocate a message for the MLME message. */
   pMsg = MSG_AllocType(mlmeMessage_t);
+
   if (pMsg != NULL)
   {
     /* This is a MLME-ASSOCIATE.req command. */
@@ -775,6 +827,7 @@ static uint8_t App_SendAssociateRequest(void)
     pAssocReq->coordAddrMode      = mCoordInfo.coordAddrMode;
     pAssocReq->logicalChannel     = mCoordInfo.logicalChannel;
     pAssocReq->securityLevel      = gMacSecurityNone_c;
+
 #ifdef gPHY_802_15_4g_d
     pAssocReq->channelPage = gChannelPageId9_c;
 #else
@@ -782,10 +835,10 @@ static uint8_t App_SendAssociateRequest(void)
 #endif
 
     /* We want the coordinator to assign a short address to us. */
-    pAssocReq->capabilityInfo     = gCapInfoAllocAddr_c;
+    pAssocReq->capabilityInfo    = gCapInfoAllocAddr_c;
       
     /* Send the Associate Request to the MLME. */
-    if(NWK_MLME_SapHandler( pMsg, macInstance ) == gSuccess_c)
+    if(NWK_MLME_SapHandler(pMsg, macInstance) == gSuccess_c)
     {
       Serial_Print(interfaceId, "Done\n\r", gAllowToBlock_d);
       return errorNoError;
@@ -821,10 +874,10 @@ static uint8_t App_HandleAssociateConfirm(nwkMessage_t *pMsg)
      that means we must use our own extended address in all
      communications with the coordinator. Otherwise, we use
      the short address assigned to us. */
-  if ( pMsg->msgData.associateCnf.status == gSuccess_c) 
+  if (pMsg->msgData.associateCnf.status == gSuccess_c) 
   {
 
-	  if( pMsg->msgData.associateCnf.assocShortAddress >= 0xFFFE)
+	  if(pMsg->msgData.associateCnf.assocShortAddress >= 0xFFFE)
 	  {
 	    mAddrMode = gAddrModeExtendedAddress_c;
 	    FLib_MemCpy(maMyAddress, (void*)&mExtendedAddress, 8);
@@ -857,7 +910,9 @@ static uint8_t App_HandleMlmeInput(nwkMessage_t *pMsg)
   static uint8_t lowPowerCounter = 0;
 #endif
   if(pMsg == NULL)
+  {
     return errorNoMessage;
+  }
   
   /* Handle the incoming message. The type determines the sort of processing.*/
   switch(pMsg->msgType) {
@@ -907,7 +962,6 @@ static uint8_t App_HandleMlmeInput(nwkMessage_t *pMsg)
 /******************************************************************************
 * The App_HandleMcpsInput(mcpsToNwkMessage_t *pMsgIn) function will handle 
 * messages from the MCPS, e.g. Data Confirm, and Data Indication.
-*
 ******************************************************************************/
 static void App_HandleMcpsInput(mcpsToNwkMessage_t *pMsgIn)
 {
@@ -945,7 +999,6 @@ static void App_HandleMcpsInput(mcpsToNwkMessage_t *pMsgIn)
 *   errorNoError: The message was of the expected type.
 *   errorNoMessage: The message pointer is NULL.
 *   errorWrongConfirm: The message is not of the expected type.
-*
 ******************************************************************************/
 static uint8_t App_WaitMsg(nwkMessage_t *pMsg, uint8_t msgType)
 {
@@ -977,7 +1030,7 @@ static uint8_t App_WaitMsg(nwkMessage_t *pMsg, uint8_t msgType)
 * Data Request message. The message is sent to the MCPS service access point
 * in the MAC.
 ******************************************************************************/
-static void App_Transmit(void)
+static void App_TransmitUartData(void)
 {   
     uint16_t count;
     
@@ -990,7 +1043,7 @@ static void App_Transmit(void)
     }
     
     /* Limit data transfer size */
-    if( count > mMaxKeysToReceive_c )
+    if(count > mMaxKeysToReceive_c)
     {
         count = mMaxKeysToReceive_c;
     }
@@ -1011,9 +1064,10 @@ static void App_Transmit(void)
         /* Data is available in the SerialManager's receive buffer. Now create an
         MCPS-Data Request message containing the data. */
         mpPacket->msgType = gMcpsDataReq_c;
-        mpPacket->msgData.dataReq.pMsdu = (uint8_t*)(&mpPacket->msgData.dataReq.pMsdu) + 
+        mpPacket->msgData.dataReq.pMsdu = (uint8_t*)(&mpPacket->msgData.dataReq.pMsdu) +
                                           sizeof(mpPacket->msgData.dataReq.pMsdu);
 
+        /* The MAC service data unit (MSDU) carries the frame's payload and has a maximum capacity of 104 octets of data */
         /**/
         Serial_Read(interfaceId, mpPacket->msgData.dataReq.pMsdu, count, &count);
 		/**/
@@ -1023,12 +1077,20 @@ static void App_Transmit(void)
         /* Create the header using coordinator information gained during 
         the scan procedure. Also use the short address we were assigned
         by the coordinator during association. */
+
+        /* copying coordinator's address to packet's dest. register */
         FLib_MemCpy(&mpPacket->msgData.dataReq.dstAddr, &mCoordInfo.coordAddress, 8);
+        /* copying end device's address to packet's source register */
         FLib_MemCpy(&mpPacket->msgData.dataReq.srcAddr, &maMyAddress, 8);
+        /* copying coordinator's pan id to packet's dest. pan id */
         FLib_MemCpy(&mpPacket->msgData.dataReq.dstPanId, &mCoordInfo.coordPanId, 2);
+        /* copying end device's pan id to packet's source register */
         FLib_MemCpy(&mpPacket->msgData.dataReq.srcPanId, &mCoordInfo.coordPanId, 2);
+        /* copying coordinator's address mode */
         mpPacket->msgData.dataReq.dstAddrMode = mCoordInfo.coordAddrMode;
+        /* copying end device's address mode */
         mpPacket->msgData.dataReq.srcAddrMode = mAddrMode;
+        /* set the payload's length */
         mpPacket->msgData.dataReq.msduLength = count;
         /* Request MAC level acknowledgement of the data packet */
         mpPacket->msgData.dataReq.txOptions = gMacTxOptionsAck_c;
@@ -1043,6 +1105,7 @@ static void App_Transmit(void)
         
         /* Prepare for another data buffer */
         mpPacket = NULL;
+        /* increase the number of pending packets */
         mcPendingPackets++;
     }
     
@@ -1050,9 +1113,64 @@ static void App_Transmit(void)
     or new data has beed received, try to send it later   */
     Serial_RxBufferByteCount(interfaceId, &count);
     
-    if( count )
+    if(count)
     {
-        OSA_EventSet(mAppEvent, gAppEvtRxFromUart_c);
+        OSA_EventSet(mAppEvent, gAppEvtRx_c);
+    }
+}
+
+static void App_Transmit_Buffer(void)
+{
+
+    if((mcPendingPackets < mDefaultValueOfMaxPendingDataPackets_c) && (mpPacket == NULL))
+    {
+        /* If the maximum number of pending data buffes is below maximum limit
+        and we do not have a data buffer already then allocate one. */
+        mpPacket = MSG_Alloc(sizeof(nwkToMcpsMessage_t) + gMaxPHYPacketSize_c);
+    }
+
+    if(mpPacket != NULL)
+    {
+        /* Data is available in the SerialManager's receive buffer. Now create an
+        MCPS-Data Request message containing the data. */
+    	mpPacket->msgType = gMcpsDataReq_c;
+    	/* Allocate memory for the frame's payload */
+        mpPacket->msgData.dataReq.pMsdu = (uint8_t*)(&mpPacket->msgData.dataReq.pMsdu) + sizeof(mpPacket->msgData.dataReq.pMsdu);
+
+        /* copy the whole buffer to the frame's payload */
+        FLib_MemCpy(&mpPacket->msgData.dataReq.pMsdu, (uint8_t*)g_buffer, BufferSize);
+
+        /* Create the header using coordinator information gained during
+             the scan procedure. Also use the short address we were assigned
+             by the coordinator during association. */
+		 /* copying coordinator's address to packet's dest. register */
+		 FLib_MemCpy(&mpPacket->msgData.dataReq.dstAddr, &mCoordInfo.coordAddress, 8);
+		 /* copying end device's address to packet's source register */
+		 FLib_MemCpy(&mpPacket->msgData.dataReq.srcAddr, &maMyAddress, 8);
+		 /* copying coordinator's pan id to packet's dest. pan id */
+		 FLib_MemCpy(&mpPacket->msgData.dataReq.dstPanId, &mCoordInfo.coordPanId, 2);
+		 /* copying end device's pan id to packet's source register */
+		 FLib_MemCpy(&mpPacket->msgData.dataReq.srcPanId, &mCoordInfo.coordPanId, 2);
+		 /* copying coordinator's address mode */
+		 mpPacket->msgData.dataReq.dstAddrMode = mCoordInfo.coordAddrMode;
+		 /* copying end device's address mode */
+		 mpPacket->msgData.dataReq.srcAddrMode = mAddrMode;
+		 /* set the payload's length */
+		 mpPacket->msgData.dataReq.msduLength = BufferSize;
+		 /* Request MAC level acknowledgement of the data packet */
+		 mpPacket->msgData.dataReq.txOptions = gMacTxOptionsAck_c;
+		 /* Give the data packet a handle. The handle is
+		 returned in the MCPS-Data Confirm message. */
+		 mpPacket->msgData.dataReq.msduHandle = mMsduHandle++;
+		 /* Don't use security */
+		 mpPacket->msgData.dataReq.securityLevel = gMacSecurityNone_c;
+
+        /* Send the Data Request to the MCPS */
+        (void)NWK_MCPS_SapHandler(mpPacket, macInstance);
+
+        /* Prepare for another data buffer */
+        mpPacket = NULL;
+        mcPendingPackets++;
     }
 }
 
@@ -1160,3 +1278,18 @@ resultType_t MCPS_NWK_SapHandler (mcpsToNwkMessage_t* pMsg, instanceId_t instanc
   OSA_EventSet(mAppEvent, gAppEvtMessageFromMCPS_c);
   return gSuccess_c;
 }
+
+static void myTaskTimerCallback(void*param)
+{
+	OSA_EventSet(mAppEvent, gAppEvTimer);
+
+	if(g_counter > 3)
+	{
+		g_counter = 0;
+	}
+	else
+	{
+		g_counter++;
+	}
+}
+

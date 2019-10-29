@@ -19,6 +19,10 @@
 *************************************************************************************
 ********************************************************************************** */
 
+#include "FreeRTOS.h"
+#include "task.h"
+#include  "stdio.h"
+
 /************************************************************************************
 *************************************************************************************
 * Public macros
@@ -35,16 +39,10 @@
 #define mEnterLowPowerWhenIdle_c (0)
 #endif
 
-#ifdef gPHY_802_15_4g_d
-  #define mDefaultValueOfChannel_c (0x0001FFFF)
-#else
-  #define mDefaultValueOfChannel_c (0x07FFF800)
-#endif
+#define mDefaultValueOfChannel_c (0x00008000) /* channel 15 */
 
 /* Maximum number of outstanding packets */
 #define mDefaultValueOfMaxPendingDataPackets_c 2
-
-#define mDefaultBufferSize 12
 
 /* The slow polling interval is used if the coordinator
    had no data last time we polled. */
@@ -83,10 +81,11 @@ enum {
    send multiple events to the task */
 
 #define gAppEvtDummyEvent_c            (1 << 0)
-#define gAppEvtRxFromUart_c            (1 << 1)
+#define gAppEvtRx_c           		   (1 << 1)
 #define gAppEvtMessageFromMLME_c       (1 << 2)
 #define gAppEvtMessageFromMCPS_c       (1 << 3)
 #define gAppEvtPressedRestoreNvmBut_c  (1 << 4)
+#define gAppEvTimer 				   (1 << 5)
 
 /* Error codes */
 enum {

@@ -44,7 +44,6 @@
 #include "board.h"
 #include "fsl_os_abstraction.h"
 
-#include  "BufferCounter.h"
 /************************************************************************************
 *************************************************************************************
 * Private macros
@@ -86,6 +85,7 @@ static void    AppPollWaitTimeout(void *);
 static void    App_HandleKeys( key_event_t events );
 static void App_Transmit_Buffer(void);
 static void myTaskTimerCallback(void*param);
+static void Buffer_Init();
 
 void App_init( void );
 void AppThread (osaTaskParam_t argument);
@@ -149,15 +149,11 @@ osaEventId_t          mAppEvent;
 osaTaskId_t           mAppTaskHandler;
 
 static uint8_t        g_counter;
-static osaEventId_t   mMyEvents;
 
 /* global variable to store timer ID */
 static tmrTimerID_t myTimerID = gTmrInvalidTimerID_c;
 
-/* local variable to store the current state of the leds */
-static uint8_t ledsState = 0;
-
-static uint8_t 		  g_buffer[BufferSize]; /* buffer for counter transmission */
+static uint8_t        g_buffer[mDefaultBufferSize];
 
 #if gNvmTestActive_d
 
@@ -220,17 +216,7 @@ void main_task(uint32_t param)
         Phy_Init();
         RNG_Init(); /* RNG must be initialized after the PHY is Initialized */
         MAC_Init();
-        buffer_init(g_buffer);
-
-        myTimerID = TMR_AllocateTimer();
-
-		TMR_StartIntervalTimer(myTimerID,
-									3000,
-					 myTaskTimerCallback,
-									NULL
-							   );
-
-		g_counter = 0;
+        Buffer_Init();
 
 #if mEnterLowPowerWhenIdle_c
         PWR_Init();
@@ -245,6 +231,10 @@ void main_task(uint32_t param)
         Mac_RegisterSapHandlers( MCPS_NWK_SapHandler, MLME_NWK_SapHandler, macInstance );
 
         App_init();
+
+        myTimerID = TMR_AllocateTimer();
+
+		g_counter = 5;
 
         /* Create application task */
         mAppTaskHandler = OSA_TaskCreate(OSA_TASK(AppThread), NULL);
@@ -446,6 +436,12 @@ void AppThread(osaTaskParam_t argument)
 				/* switch to active scan state. */
 				gState = stateScanActiveStart;
 
+				TMR_StartIntervalTimer(myTimerID,
+											3000,
+							 myTaskTimerCallback,
+											NULL
+									   );
+
 				OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
 			break;
 			case stateScanActiveStart:
@@ -480,7 +476,7 @@ void AppThread(osaTaskParam_t argument)
 								Serial_Print(interfaceId, "\n\rLogical Channel...0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.logicalChannel, 1, gPrtHexNoFormat_c);
 								Serial_Print(interfaceId, "\n\rBeacon Spec.......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, (uint8_t*)&mCoordInfo.superframeSpec, 2, gPrtHexNoFormat_c);
 								Serial_Print(interfaceId, "\n\rLink Quality......0x", gAllowToBlock_d); Serial_PrintHex(interfaceId, &mCoordInfo.linkQuality, 1, gPrtHexNoFormat_c);
-								Serial_Print(interfaceId, "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\r~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~\n\r", gAllowToBlock_d);
 								Serial_Print(interfaceId, "\n\r\n\r", gAllowToBlock_d);
 
 								/* switch to association state */
@@ -489,7 +485,7 @@ void AppThread(osaTaskParam_t argument)
 							}
 							else
 							{
-								Serial_Print(interfaceId, "Scan did not find a suitable coordinator\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\rScan did not find a suitable coordinator!\n\r", gAllowToBlock_d);
 
 								/* reload active scan state*/
 								gState = stateScanActiveStart;
@@ -501,7 +497,8 @@ void AppThread(osaTaskParam_t argument)
 			break;
 			case stateAssociate:
 				/* Associate to the PAN coordinator */
-				Serial_Print(interfaceId, "Associating to PAN coordinator on channel 0x", gAllowToBlock_d);
+				Serial_Print(interfaceId, "\n\rAssociating to PAN coordinator on channel 0x", gAllowToBlock_d);
+				Serial_Print(interfaceId, "\n\r", gAllowToBlock_d);
 				Serial_PrintHex(interfaceId, &(mCoordInfo.logicalChannel), 1, gPrtHexNewLine_c);
 
 				rc = App_SendAssociateRequest();
@@ -521,8 +518,9 @@ void AppThread(osaTaskParam_t argument)
 							rc = App_HandleAssociateConfirm(pMsgIn);
 							if (rc == errorNoError)
 							{
-								Serial_Print(interfaceId, "Successfully associated with the coordinator.\n\r", gAllowToBlock_d);
-								Serial_Print(interfaceId, "We were assigned the short address 0x", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\rSuccessfully associated with the coordinator.\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\rWe were assigned the short address 0x", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\r", gAllowToBlock_d);
 								Serial_PrintHex(interfaceId, maMyAddress, mAddrMode == gAddrModeShortAddress_c ? 2 : 8, gPrtHexNoFormat_c);
 								Serial_Print(interfaceId, "\n\r\n\rReady to send and receive data over the UART.\n\r\n\r", gAllowToBlock_d);
 
@@ -534,7 +532,7 @@ void AppThread(osaTaskParam_t argument)
 							}
 							else
 							{
-								Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... \n\r\n\r", gAllowToBlock_d);
+								Serial_Print(interfaceId, "\n\rAssociate Confirm wasn't successful... :(\n\r\n\r", gAllowToBlock_d);
 
 								gState = stateScanActiveStart;
 								OSA_EventSet(mAppEvent, gAppEvtDummyEvent_c);
@@ -562,29 +560,28 @@ void AppThread(osaTaskParam_t argument)
 
 				if (ev & gAppEvTimer)
 				{
-					//***TODO:App_Transmit_Buffer();
+					App_Transmit_Buffer();
 
 					TurnOffLeds();
 
 					switch(g_counter)
 					{
+						case 0:
+							Led1On(); /* light red */
+						break;
 						case 1:
-							Led1On();
+							Led2On(); /* red */
 						break;
 						case 2:
-							Led2On();
+							Led3On(); /* green*/
 						break;
 						case 3:
-							Led3On();
-						break;
-						case 4:
-							Led4On();
+							Led4On(); /* blue */
 						break;
 						default:
 						break;
 					}
 				}
-
 				/***/
 			break;
 			default:
@@ -1138,7 +1135,7 @@ static void App_Transmit_Buffer(void)
         mpPacket->msgData.dataReq.pMsdu = (uint8_t*)(&mpPacket->msgData.dataReq.pMsdu) + sizeof(mpPacket->msgData.dataReq.pMsdu);
 
         /* copy the whole buffer to the frame's payload */
-        FLib_MemCpy(&mpPacket->msgData.dataReq.pMsdu, (uint8_t*)g_buffer, BufferSize);
+        FLib_MemCpy(mpPacket->msgData.dataReq.pMsdu, (uint8_t*) g_buffer, mDefaultBufferSize);
 
         /* Create the header using coordinator information gained during
              the scan procedure. Also use the short address we were assigned
@@ -1156,7 +1153,7 @@ static void App_Transmit_Buffer(void)
 		 /* copying end device's address mode */
 		 mpPacket->msgData.dataReq.srcAddrMode = mAddrMode;
 		 /* set the payload's length */
-		 mpPacket->msgData.dataReq.msduLength = BufferSize;
+		 mpPacket->msgData.dataReq.msduLength = mDefaultBufferSize;
 		 /* Request MAC level acknowledgement of the data packet */
 		 mpPacket->msgData.dataReq.txOptions = gMacTxOptionsAck_c;
 		 /* Give the data packet a handle. The handle is
@@ -1281,9 +1278,7 @@ resultType_t MCPS_NWK_SapHandler (mcpsToNwkMessage_t* pMsg, instanceId_t instanc
 
 static void myTaskTimerCallback(void*param)
 {
-	OSA_EventSet(mAppEvent, gAppEvTimer);
-
-	if(g_counter > 3)
+	if(g_counter > 2)
 	{
 		g_counter = 0;
 	}
@@ -1291,5 +1286,24 @@ static void myTaskTimerCallback(void*param)
 	{
 		g_counter++;
 	}
+
+
+	g_buffer[10] = g_counter + 48;
+
+	OSA_EventSet(mAppEvent, gAppEvTimer);
 }
 
+static void Buffer_Init()
+{
+	g_buffer[0] = 'c';
+	g_buffer[1] = 'o';
+	g_buffer[2] = 'u';
+	g_buffer[3] = 'n';
+	g_buffer[4] = 't';
+	g_buffer[6] = 'e';
+	g_buffer[7] = 'r';
+	g_buffer[8] = ':';
+	g_buffer[9] = ' ';
+	g_buffer[11] = 0x0A; /* line feed */
+	g_buffer[12] = 0x0D; /* carriage return */
+}

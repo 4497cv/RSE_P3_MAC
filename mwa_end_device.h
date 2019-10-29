@@ -39,6 +39,7 @@
 #define mEnterLowPowerWhenIdle_c (0)
 #endif
 
+#define mDefaultBufferSize 13
 #define mDefaultValueOfChannel_c (0x00008000) /* channel 15 */
 
 /* Maximum number of outstanding packets */

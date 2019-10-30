@@ -75,6 +75,13 @@ enum {
 #define gAppEvCounter3_c               (1 << 7)
 #define gAppEvCounter4_c               (1 << 8)
 
+enum
+{
+	counter_state_1 = 49,
+	counter_state_2 = 50,
+	counter_state_3 = 51,
+	counter_state_4 = 52
+};
 /* Error codes */
 enum {
   errorNoError,
